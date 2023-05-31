@@ -5,8 +5,8 @@ on:
   #   branches:
   #     - "main"
   schedule:
-  # job should run at 9.01 pst which translates to 5pm UTC
-    - cron: '1 * * * *'
+  # job should run at 8.01 pst which translates to 4pm UTC
+    - cron: '1 16 * * *'
   workflow_dispatch:
 
 jobs:
@@ -33,7 +33,7 @@ jobs:
       shell: bash
       run: |
         pip install --upgrade pip
-        pip install -r scripts/requirements.txt
+        pip install -r requirements.txt
     - id: debug
       name: debug and list files
       shell: bash
@@ -43,4 +43,4 @@ jobs:
       name: download dischargeOBS files
       shell: bash
       run: |
-        python scripts/src/discharge_obs_pd.py
+        python discharge_obs_pd.py
