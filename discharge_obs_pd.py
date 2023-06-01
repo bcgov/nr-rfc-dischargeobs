@@ -4,7 +4,6 @@ import requests
 import constants
 import os
 import datetime
-import time
 
 
 #Jan/Feb/Mar: output to instant1 file, Apr/May/Jun: output to instant2 file, etc.
@@ -19,27 +18,12 @@ import time
 #Automatically grab data from alternative file sources if needed
 
 
-def get_hydro_data():
-    #this is going to make a web request to retrieve the hydrometric data
-    
-    if not os.path.exists(local_filename):
-    
-        # NOTE the stream=True parameter below
-        with requests.get(constants.SOURCE_HYDRO_DATA, stream=True) as r:
-            r.raise_for_status()
-            with open(local_filename, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192): 
-                    # If you have chunk encoded response uncomment if
-                    # and set chunk_size parameter to None.
-                    #if chunk: 
-                    f.write(chunk)
-
 #Download WSC data from datamart:
-def download_WSC_data():
+def download_WSC_data(dest_folder):
     #Loop through datamart file paths listed in constants.py file:
     for fname in constants.SOURCE_HYDRO_DATA:
         #Use filename (removing remainder of url) for saving file locally:
-        local_filename = fname.split("/")[-1]
+        local_filename = os.path.join(dest_folder,fname.split("/")[-1])
         #Download file and write to local file name:
         with requests.get(fname, stream=True) as r:
             r.raise_for_status()
@@ -47,10 +31,10 @@ def download_WSC_data():
                 for chunk in r.iter_content(chunk_size=8192): 
                     f.write(chunk)
 
-def download_provincial_data():
+def download_provincial_data(dest_folder):
     for fname in constants.PROV_HYDRO_SRC:
         #Use filename (removing remainder of url) for saving file locally:
-        local_filename = fname.split("/")[-1]
+        local_filename = os.path.join(dest_folder, fname.split("/")[-1])
         #Download file and write to local file name:
         with requests.get(fname, stream=True) as r:
             r.raise_for_status()
@@ -58,12 +42,12 @@ def download_provincial_data():
                 for chunk in r.iter_content(chunk_size=8192): 
                     f.write(chunk)
 
-def format_provincial_data(pfile):
+def format_provincial_data(src_file):
     col_datetime = 5
     col_ID = 0
     col_val = 7
     #Open discharge.csv (discharge data from provincial non-integrated network)
-    df_prov = pd.read_csv(pfile)
+    df_prov = pd.read_csv(src_file)
     prov_stn_list = pd.read_csv('provincial_station_list.csv')
     #Filter dataframe to only contain stations in provincial station list:
     df_prov = df_prov[df_prov.iloc[:,col_ID].isin(prov_stn_list.ID)]
@@ -74,17 +58,18 @@ def format_provincial_data(pfile):
 
     #Should current_datetime be calculated at time of data download?
     current_datetime = datetime.datetime.now()
-    start_datetime = current_datetime.replace(second=0, hour=0, minute=0) - datetime.timedelta(days=1)
+    start_datetime = current_datetime.replace(second=0, hour=0, minute=0) - datetime.timedelta(days=2)
 
+    #Remove data outside of import data range:
     df_prov = df_prov[df_prov.iloc[:,col_datetime]>start_datetime]
     df_prov = df_prov[df_prov.iloc[:,col_datetime]<current_datetime]
+    #Pivot data:
     df_prov = df_prov.pivot(index = list(df_prov)[col_datetime],columns = list(df_prov)[col_ID], values = list(df_prov)[col_val])
     return df_prov
 
 
-instfile = "DischargeOBS_2023_instant2.xlsx"
-def read_instantaneous_data_xlsx(instfile):
-    f = open(instfile,'rb')
+def read_instantaneous_data_xlsx(src_file):
+    f = open(src_file,'rb')
     Q_inst = pd.read_excel(f,sheet_name='ALL_Q')
     H_inst = pd.read_excel(f,sheet_name='ALL_H')
     f.close()
@@ -98,9 +83,9 @@ def read_instantaneous_data_xlsx(instfile):
 
     return Q_inst, H_inst
 
-def format_WSC_data():
+def format_WSC_data(src_folder):
     for fname in constants.SOURCE_HYDRO_DATA:
-        local_filename = fname.split("/")[-1]
+        local_filename = os.path.join(src_folder, fname.split("/")[-1])
 
         #Read in WSC data from file:
         df = pd.read_csv(local_filename)
@@ -121,9 +106,9 @@ def format_WSC_data():
 
     return Q_inst, H_inst
 
-def read_instantaneous_data(infile):
+def read_instantaneous_data(src_file):
     
-    df = pd.read_csv(infile)
+    df = pd.read_csv(src_file)
 
     #Fill in missing rows with previous date value:
     datefill = df.iloc[:,0:2].fillna(method='ffill')
@@ -139,14 +124,15 @@ def update_instantaneous_data():
 
     #Write new discharge values into DischargeOBS instantaneous
     #.combine_first may not overwrite existing values. May need to set prior data to NA to ensure revised data gets written to table
-    Q_inst_updated = Q_inst.combine_first(Q_inst_new_pivot)
-    Q_inst_updated.to_csv('out.csv')
+    #Q_inst_updated = Q_inst.combine_first(Q_inst_new_pivot)
+    #Q_inst_updated.to_csv('out.csv')
     #Rearrange columns to order expected by excel dischargeOBS?
 
 
 
 
-def write_hydro_data(infile,outfile):
+#def write_hydro_data(infile,outfile):
+    '''
     start = "2023-04-01"
     stop = "2023-07-01"
     DateSeq5min = pd.date_range(start, stop, freq="5min")
@@ -154,23 +140,31 @@ def write_hydro_data(infile,outfile):
     discharge_obs_pivot = df.pivot(index = list(df)[1],columns = list(df)[0], values = list(df)[6])
     DischargeOBS5min_updated = DischargeOBS5min.combine_first(discharge_obs_pivot)
     DischargeOBS5min_updated.to_csv('out.csv')
-
+    '''
     #Pandas does not support pendulum :(
 
 if __name__ == '__main__':
     # 
     Q_file = 'DischargeOBS_2023_instant2_Q.csv'
     H_file = 'DischargeOBS_2023_instant2_H.csv'
+    data_folder = constants.RAW_DATA_FOLDER
+    dest_folder = constants.DEST_DATA_FOLDER
+    Q_path = os.path.join(dest_folder,Q_file)
+    prov_Q_path = os.path.join(data_folder,constants.PROV_HYDRO_SRC[0].split("/")[-1])
     stn_list = pd.read_excel('STN_list.xlsx')
+    
+    if not os.path.exists(data_folder):
+        # Create data directory if it does not already exist:
+        os.makedirs(data_folder)
 
+    download_WSC_data(data_folder)
+    download_provincial_data(data_folder)
 
-    download_WSC_data()
-    download_provincial_data()
-
-    Q_WSC, H_WSC = format_WSC_data()
-    Q_prov = format_provincial_data(constants.PROV_HYDRO_SRC[0].split("/")[-1])
+    Q_WSC, H_WSC = format_WSC_data(data_folder)
+    
+    Q_prov = format_provincial_data(prov_Q_path)
     #H_prov = format_provincial_data(constants.PROV_HYDRO_SRC[1].split("/")[-1])
-    Q_inst = read_instantaneous_data(Q_file)
+    Q_inst = read_instantaneous_data(Q_path)
     #H_inst = read_instantaneous_data(H_file)
     
     #Write new data to instantaneous file:
@@ -180,5 +174,5 @@ if __name__ == '__main__':
     Q_inst_updated = Q_inst_updated.reindex(columns=col_list)
 
     #Save instantaneous file with updated data:
-    Q_inst_updated.to_csv(Q_file,index=False)
+    Q_inst_updated.to_csv(Q_path,index=False)
 

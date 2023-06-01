@@ -9,6 +9,9 @@ SOURCE_HYDRO_DATA = ['https://dd.weather.gc.ca/hydrometric/csv/BC/hourly/BC_hour
 PROV_HYDRO_SRC = ['http://www.env.gov.bc.ca/wsd/data_searches/water/Discharge.csv',
                   'http://www.env.gov.bc.ca/wsd/data_searches/water/Stage.csv']
 
+RAW_DATA_FOLDER = 'raw_data'
+DEST_DATA_FOLDER = 'processed_data'
+
 SOURCE_HYDRO_DATETIME_FORMAT = 'YYYY-MM-DD HH:mm:ssZZ'
 
 DEMO_VAR = 3
