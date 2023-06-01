@@ -6,7 +6,7 @@ on:
   #     - "main"
   schedule:
   # job should run at 8.01 pst which translates to 4pm UTC
-    - cron: '6 * * * *'
+    - cron: '15 * * * *'
   workflow_dispatch:
 
 jobs:
