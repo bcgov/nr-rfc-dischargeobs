@@ -1,0 +1,46 @@
+name: Update DischargeOBS
+
+on:
+  # push:
+  #   branches:
+  #     - "main"
+  schedule:
+  # job should run at 8.01 pst which translates to 4pm UTC
+    - cron: '15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  dl_dischargeobs:
+    defaults:
+      run:
+        shell: bash
+    name: 'Download DischargeOBS Files'
+    runs-on: ubuntu-20.04
+    environment: RUN
+
+    steps:
+    - uses: actions/checkout@v3
+      id: checkout
+      with:
+       fetch-depth: 0
+
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - id: install_dependencies
+      name: install python dependencies
+      shell: bash
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+    - id: debug
+      name: debug and list files
+      shell: bash
+      run: |
+        ls -la
+    - id: download_dischargeOBS
+      name: download dischargeOBS files
+      shell: bash
+      run: |
+        python discharge_obs_pd.py
