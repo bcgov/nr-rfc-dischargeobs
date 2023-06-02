@@ -5,6 +5,8 @@ import constants
 import os
 import datetime
 import NRUtil.NRObjStoreUtil as NRObjStoreUtil
+import pyarrow
+from dateutil.parser import parse
 
 #Jan/Feb/Mar: output to instant1 file, Apr/May/Jun: output to instant2 file, etc.
 #Open instant file or create it if it doesn't exist
@@ -43,6 +45,7 @@ def download_provincial_data(dest_folder):
                     f.write(chunk)
 
 def format_provincial_data(src_file):
+    #Set columns of dataframes containing station ID, data values, and datetimes:
     col_datetime = 5
     col_ID = 0
     col_val = 7
@@ -106,9 +109,13 @@ def format_WSC_data(src_folder):
 
     return Q_inst, H_inst
 
-def read_instantaneous_data(src_file):
-    
-    df = pd.read_csv(src_file)
+def read_csv_data(src_file):
+
+    ext = os.path.splitext(src_file)[1]
+    if ext=='.csv':
+        df = pd.read_csv(src_file)
+    elif ext == '.parquet':
+        df = pd.read_parquet(src_file)
 
     #Fill in missing rows with previous date value:
     datefill = df.iloc[:,0:2].fillna(method='ffill')
@@ -120,23 +127,69 @@ def read_instantaneous_data(src_file):
 
     return df
 
-def update_instantaneous_data(new_data, local_path, obj_path,stn_list):
+def update_instantaneous_data(new_data, local_path, obj_path, datatype):
     #Write new discharge values into DischargeOBS instantaneous
     #.combine_first may not overwrite existing values. May need to set prior data to NA to ensure revised data gets written to table
-    ostore.get_object(local_path=local_path, file_path=obj_path)
-    inst_data = read_instantaneous_data(local_path)
-    
-    #Write new data to instantaneous file:
+
+    #Data is stored in seperate parquet filea for each year and month
+    #Read data from all files which overlap in date range with new data:
+    inst_data = get_instantaneous_data(new_data, datatype, local_path, obj_path)
+    #Combine new data into existing data:
     inst_updated = inst_data.combine_first(new_data)
-    #Re-order columns (0:3 are date/hour/minute, stations ordered based on station list)
-    col_list = pd.concat([inst_data.columns[0:3].to_series(),stn_list]) 
-    inst_updated = inst_updated.reindex(columns=col_list)
+    #Save data back into separate year-month parquet files:
+    save_instantaneous_data(inst_updated, datatype, local_path, obj_path)
 
-    #Save instantaneous file with updated data:
-    inst_updated.to_csv(local_path,index=False)
-    ostore.put_object(local_path=local_path, ostore_path=obj_path)
-    #Rearrange columns to order expected by excel dischargeOBS?
+def get_instantaneous_data(new_data, datatype, local_path, obj_path):
+    #Grab year and month from index of new data (index must be datetime type):
+    dt_stamp = new_data.index.strftime("%Y%m")
+    #Produces set of unique year-month values from index:
+    dt_set = set(dt_stamp)
+    first = True
+    #Loops though unique year-month values from new data. Load instantaneous data files associated with these year-months:
+    for i in dt_set:
+        #File naming convention set here:
+        filename = 'DischargeOBS_'+ i + '_' + datatype + '.parquet'
+        filepath = os.path.join(local_path,filename)
+        obj_filepath = os.path.join(obj_path,filename)
+        ostore.get_object(local_path=filepath, file_path=obj_filepath)
+        data_chunk = pd.read_parquet(filepath)
+        #Combine data from all files into single dataframe:
+        if first:
+            data = data_chunk
+            first = False
+        else:
+            data = pd.concat([data,data_chunk])
 
+    return data
+
+#To do: Check if files exists, create file if it does not.
+def save_instantaneous_data(data, datatype, local_path, obj_path):
+    #Grab year and month from index of dataframe (index must be datetime type):
+    dt_stamp = data.index.strftime("%Y%m")
+    #Produces set of unique year-month values from index:
+    dt_set = set(dt_stamp)
+    #Loops though unique year-month values from dataframe. Save instantaneous data files associated with these year-months:
+    for i in dt_set:
+        data_chunk = data[dt_stamp==i]
+        filename = 'DischargeOBS_'+ i + '_' + datatype + '.parquet'
+        filepath = os.path.join(local_path,filename)
+        obj_filepath = os.path.join(obj_path,filename)
+        data_chunk.to_parquet(filepath)
+        ostore.put_object(local_path=filepath, ostore_path=obj_filepath)
+
+def return_data_path(url):
+    r = requests.head(url)
+    url_time = r.headers['last-modified']
+    url_date = parse(url_time)
+    dt_stamp = url_date.strftime("%Y%m%d%H%M")
+
+def csv_to_parquet(local_path,obj_path):
+    ostore.get_object(local_path=local_path, file_path=obj_path)
+    df = pd.read_csv(local_path)
+    local_parquet_path = os.path.splitext(local_path)[0] + '.parquet'
+    obj_parquet_path = os.path.splitext(obj_path)[0] + '.parquet'
+    df.to_parquet(local_parquet_path)
+    ostore.put_object(local_path=local_parquet_path, ostore_path=obj_parquet_path)
 
 
 
@@ -160,6 +213,7 @@ if __name__ == '__main__':
     H_file = 'DischargeOBS_2023_instant2_H.csv'
     data_folder = constants.RAW_DATA_FOLDER
     dest_folder = constants.DEST_DATA_FOLDER
+    obj_path = 'dischargeOBS/processed_data/'
     Q_path = os.path.join(dest_folder, Q_file)
     H_path = os.path.join(dest_folder, H_file)
     Q_obj_path = os.path.join('dischargeOBS/processed_data/',Q_file)
@@ -180,6 +234,6 @@ if __name__ == '__main__':
     H_prov = format_provincial_data(prov_H_path)
     #H_prov = format_provincial_data(constants.PROV_HYDRO_SRC[1].split("/")[-1])
 
-    update_instantaneous_data(pd.concat([Q_WSC,Q_prov],axis=1),Q_path,Q_obj_path,stn_list.ID)
-    update_instantaneous_data(pd.concat([H_WSC,H_prov],axis=1),H_path,H_obj_path,stn_list.ID)
+    update_instantaneous_data(pd.concat([Q_WSC,Q_prov],axis=1),dest_folder,obj_path,'Q')
+    update_instantaneous_data(pd.concat([H_WSC,H_prov],axis=1),dest_folder,obj_path,'H')
 
