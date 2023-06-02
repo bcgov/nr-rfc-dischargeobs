@@ -4,7 +4,11 @@ import requests
 import constants
 import os
 import datetime
+import logging
 import NRUtil.NRObjStoreUtil as NRObjStoreUtil
+
+LOGGER = logging.getLogger()
+
 
 #Jan/Feb/Mar: output to instant1 file, Apr/May/Jun: output to instant2 file, etc.
 #Open instant file or create it if it doesn't exist
@@ -20,10 +24,11 @@ import NRUtil.NRObjStoreUtil as NRObjStoreUtil
 
 #Download WSC data from datamart:
 def download_WSC_data(dest_folder):
+    LOGGER.info(f"retrieving the WSC data and storing at {dest_folder}")
     #Loop through datamart file paths listed in constants.py file:
     for fname in constants.SOURCE_HYDRO_DATA:
         #Use filename (removing remainder of url) for saving file locally:
-        local_filename = os.path.join(dest_folder,fname.split("/")[-1])
+        local_filename = os.path.join(dest_folder, fname.split("/")[-1])
         #Download file and write to local file name:
         with requests.get(fname, stream=True) as r:
             r.raise_for_status()
@@ -32,6 +37,7 @@ def download_WSC_data(dest_folder):
                     f.write(chunk)
 
 def download_provincial_data(dest_folder):
+    LOGGER.info(f"retrieving the provincial data and storing at {dest_folder}")
     for fname in constants.PROV_HYDRO_SRC:
         #Use filename (removing remainder of url) for saving file locally:
         local_filename = os.path.join(dest_folder, fname.split("/")[-1])
@@ -43,6 +49,7 @@ def download_provincial_data(dest_folder):
                     f.write(chunk)
 
 def format_provincial_data(src_file):
+    LOGGER.info(f"formatting the data set: {src_file}")
     col_datetime = 5
     col_ID = 0
     col_val = 7
@@ -84,6 +91,8 @@ def read_instantaneous_data_xlsx(src_file):
     return Q_inst, H_inst
 
 def format_WSC_data(src_folder):
+    LOGGER.info(f"formatting the WSC data file: {src_folder}")
+
     for fname in constants.SOURCE_HYDRO_DATA:
         local_filename = os.path.join(src_folder, fname.split("/")[-1])
 
@@ -107,7 +116,8 @@ def format_WSC_data(src_folder):
     return Q_inst, H_inst
 
 def read_instantaneous_data(src_file):
-    
+    LOGGER.info(f"reading the instantaneous file: {src_file}")
+
     df = pd.read_csv(src_file)
 
     #Fill in missing rows with previous date value:
@@ -121,6 +131,8 @@ def read_instantaneous_data(src_file):
     return df
 
 def update_instantaneous_data(new_data, local_path, obj_path,stn_list):
+    LOGGER.info(f"updating the instantaneous data from : {local_path}")
+
     #Write new discharge values into DischargeOBS instantaneous
     #.combine_first may not overwrite existing values. May need to set prior data to NA to ensure revised data gets written to table
     ostore.get_object(local_path=local_path, file_path=obj_path)
@@ -137,7 +149,16 @@ def update_instantaneous_data(new_data, local_path, obj_path,stn_list):
     ostore.put_object(local_path=local_path, ostore_path=obj_path)
     #Rearrange columns to order expected by excel dischargeOBS?
 
+def export_to_parquet(input_dataframe, output_path: str) -> None:
+    """ takes a dataframe and dumps to parquet file
 
+    :param input_dataframe: the input pandas dataframe
+    :type input_dataframe: pandas.DataFrame
+    :param output_path: the output path to write the parquet file to
+    :type output_path: str
+    """    
+    LOGGER.info(f"exporting to parquet : {output_path}")
+    input_dataframe.to_parquet(output_path)
 
 
 #def write_hydro_data(infile,outfile):
@@ -153,7 +174,20 @@ def update_instantaneous_data(new_data, local_path, obj_path,stn_list):
     #Pandas does not support pendulum :(
 
 if __name__ == '__main__':
-    # 
+    # logging config
+    LOGGER.setLevel(logging.DEBUG)
+    hndlr = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(lineno)d - %(message)s')
+    hndlr.setFormatter(formatter)
+    LOGGER.addHandler(hndlr)
+    LOGGER.debug("test")
+
+    info_level_log_modules = ['NRUtil.NRObjStoreUtil', 'urllib3.connectionpool']
+    for log_name in info_level_log_modules:
+        tmp_log_ref = logging.getLogger(log_name)
+        tmp_log_ref.setLevel(logging.INFO)
+    
+
     ostore = NRObjStoreUtil.ObjectStoreUtil()
     
     Q_file = 'DischargeOBS_2023_instant2_Q.csv'
@@ -182,4 +216,7 @@ if __name__ == '__main__':
 
     update_instantaneous_data(pd.concat([Q_WSC,Q_prov],axis=1),Q_path,Q_obj_path,stn_list.ID)
     update_instantaneous_data(pd.concat([H_WSC,H_prov],axis=1),H_path,H_obj_path,stn_list.ID)
+
+    export_to_parquet(H_prov, 'junk.parquet')
+    
 
