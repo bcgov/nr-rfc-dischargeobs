@@ -4,7 +4,7 @@ import requests
 import constants
 import os
 import datetime
-
+import NRUtil.NRObjStoreUtil as NRObjStoreUtil
 
 #Jan/Feb/Mar: output to instant1 file, Apr/May/Jun: output to instant2 file, etc.
 #Open instant file or create it if it doesn't exist
@@ -145,11 +145,14 @@ def update_instantaneous_data():
 
 if __name__ == '__main__':
     # 
+    ostore = NRObjStoreUtil.ObjectStoreUtil()
+    
     Q_file = 'DischargeOBS_2023_instant2_Q.csv'
     H_file = 'DischargeOBS_2023_instant2_H.csv'
     data_folder = constants.RAW_DATA_FOLDER
     dest_folder = constants.DEST_DATA_FOLDER
     Q_path = os.path.join(dest_folder,Q_file)
+    Q_obj_path = 'dischargeOBS/processed_data/DischargeOBS_2023_instant2_Q.csv'
     prov_Q_path = os.path.join(data_folder,constants.PROV_HYDRO_SRC[0].split("/")[-1])
     stn_list = pd.read_excel('STN_list.xlsx')
     
@@ -164,6 +167,7 @@ if __name__ == '__main__':
     
     Q_prov = format_provincial_data(prov_Q_path)
     #H_prov = format_provincial_data(constants.PROV_HYDRO_SRC[1].split("/")[-1])
+    ostore.get_object(local_path=Q_path, file_path=Q_obj_path)
     Q_inst = read_instantaneous_data(Q_path)
     #H_inst = read_instantaneous_data(H_file)
     
@@ -175,4 +179,5 @@ if __name__ == '__main__':
 
     #Save instantaneous file with updated data:
     Q_inst_updated.to_csv(Q_path,index=False)
+    ostore.put_object(local_path=Q_path, ostore_path=Q_obj_path)
 
