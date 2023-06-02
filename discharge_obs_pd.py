@@ -120,12 +120,21 @@ def read_instantaneous_data(src_file):
 
     return df
 
-def update_instantaneous_data():
-
+def update_instantaneous_data(new_data, local_path, obj_path,stn_list):
     #Write new discharge values into DischargeOBS instantaneous
     #.combine_first may not overwrite existing values. May need to set prior data to NA to ensure revised data gets written to table
-    #Q_inst_updated = Q_inst.combine_first(Q_inst_new_pivot)
-    #Q_inst_updated.to_csv('out.csv')
+    ostore.get_object(local_path=local_path, file_path=obj_path)
+    inst_data = read_instantaneous_data(local_path)
+    
+    #Write new data to instantaneous file:
+    inst_updated = inst_data.combine_first(new_data)
+    #Re-order columns (0:3 are date/hour/minute, stations ordered based on station list)
+    col_list = pd.concat([inst_data.columns[0:3].to_series(),stn_list]) 
+    inst_updated = inst_updated.reindex(columns=col_list)
+
+    #Save instantaneous file with updated data:
+    inst_updated.to_csv(local_path,index=False)
+    ostore.put_object(local_path=local_path, ostore_path=obj_path)
     #Rearrange columns to order expected by excel dischargeOBS?
 
 
@@ -151,9 +160,12 @@ if __name__ == '__main__':
     H_file = 'DischargeOBS_2023_instant2_H.csv'
     data_folder = constants.RAW_DATA_FOLDER
     dest_folder = constants.DEST_DATA_FOLDER
-    Q_path = os.path.join(dest_folder,Q_file)
-    Q_obj_path = 'dischargeOBS/processed_data/DischargeOBS_2023_instant2_Q.csv'
-    prov_Q_path = os.path.join(data_folder,constants.PROV_HYDRO_SRC[0].split("/")[-1])
+    Q_path = os.path.join(dest_folder, Q_file)
+    H_path = os.path.join(dest_folder, H_file)
+    Q_obj_path = os.path.join('dischargeOBS/processed_data/',Q_file)
+    H_obj_path = os.path.join('dischargeOBS/processed_data/',H_file)
+    prov_Q_path = os.path.join(data_folder, constants.PROV_HYDRO_SRC[0].split("/")[-1])
+    prov_H_path = os.path.join(data_folder, constants.PROV_HYDRO_SRC[1].split("/")[-1])
     stn_list = pd.read_excel('STN_list.xlsx')
     
     if not os.path.exists(data_folder):
@@ -164,20 +176,10 @@ if __name__ == '__main__':
     download_provincial_data(data_folder)
 
     Q_WSC, H_WSC = format_WSC_data(data_folder)
-    
     Q_prov = format_provincial_data(prov_Q_path)
+    H_prov = format_provincial_data(prov_H_path)
     #H_prov = format_provincial_data(constants.PROV_HYDRO_SRC[1].split("/")[-1])
-    ostore.get_object(local_path=Q_path, file_path=Q_obj_path)
-    Q_inst = read_instantaneous_data(Q_path)
-    #H_inst = read_instantaneous_data(H_file)
-    
-    #Write new data to instantaneous file:
-    Q_inst_updated = Q_inst.combine_first(pd.concat([Q_WSC,Q_prov],axis=1))
-    #Re-order columns (0:3 are date/hour/minute, stations ordered based on station list)
-    col_list = pd.concat([Q_inst.columns[0:3].to_series(),stn_list.ID]) 
-    Q_inst_updated = Q_inst_updated.reindex(columns=col_list)
 
-    #Save instantaneous file with updated data:
-    Q_inst_updated.to_csv(Q_path,index=False)
-    ostore.put_object(local_path=Q_path, ostore_path=Q_obj_path)
+    update_instantaneous_data(pd.concat([Q_WSC,Q_prov],axis=1),Q_path,Q_obj_path,stn_list.ID)
+    update_instantaneous_data(pd.concat([H_WSC,H_prov],axis=1),H_path,H_obj_path,stn_list.ID)
 
