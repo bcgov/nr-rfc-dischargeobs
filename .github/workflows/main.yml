@@ -17,6 +17,11 @@ jobs:
     name: 'Download DischargeOBS Files'
     runs-on: ubuntu-20.04
     environment: RUN
+    env:
+      OBJ_STORE_BUCKET: ${{ secrets.OBJ_STORE_BUCKET }}
+      OBJ_STORE_SECRET: ${{ secrets.OBJ_STORE_SECRET }}
+      OBJ_STORE_USER: ${{ secrets.OBJ_STORE_USER }}
+      OBJ_STORE_HOST: ${{ secrets.OBJ_STORE_HOST }}
 
     steps:
     - uses: actions/checkout@v3
