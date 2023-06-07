@@ -11,11 +11,10 @@ from dateutil.parser import parse
 #Jan/Feb/Mar: output to instant1 file, Apr/May/Jun: output to instant2 file, etc.
 #Open instant file or create it if it doesn't exist
 
-#Thoughts:
-#Save WSC/provincial data with current date in filename? Delete data older than  3 days?
-#Excel vs csv: Read/write from csv's for speed but also export as excel for compatability with existing processes
+#To Do:
+#Save raw data to object store with data and time. Check whether data is newer than existing data on objectstore before downloading
+#Create new files in object store if they do not already exist (save_instantaneous_data)
 #Ability to import multiple days worth of data in case of issue (e.g. datamart outage)
-#Add provincial hydrometric stations
 #Ensure code is flexible to easily allow addition/removal of stations
 #Automatically grab data from alternative file sources if needed
 
@@ -103,6 +102,8 @@ def format_WSC_data(src_folder):
         else:
             new_data = pd.concat([new_data,df])
 
+
+    new_data.drop_duplicates(subset=[new_data.columns[0],new_data.columns[1]],inplace=True)
     #Convert WSC data table into pivot table with datetime as index, station ID as columns, and discharge as values:
     Q_inst = new_data.pivot(index = list(df)[1],columns = list(df)[0], values = list(df)[6])
     H_inst = new_data.pivot(index = list(df)[1],columns = list(df)[0], values = list(df)[2])
