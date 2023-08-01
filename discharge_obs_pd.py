@@ -147,19 +147,23 @@ def get_instantaneous_data(new_data, datatype, local_path, obj_path):
     dt_set = set(dt_stamp)
     first = True
     #Loops though unique year-month values from new data. Load instantaneous data files associated with these year-months:
+    ostore_objs = ostore.list_objects(obj_path,return_file_names_only=True)
+
     for i in dt_set:
         #File naming convention set here:
         filename = 'DischargeOBS_'+ i + '_' + datatype + '.parquet'
         filepath = os.path.join(local_path,filename)
         obj_filepath = os.path.join(obj_path,filename)
-        ostore.get_object(local_path=filepath, file_path=obj_filepath)
-        data_chunk = pd.read_parquet(filepath)
-        #Combine data from all files into single dataframe:
-        if first:
-            data = data_chunk
-            first = False
-        else:
-            data = pd.concat([data,data_chunk])
+
+        if obj_filepath in ostore_objs:
+            ostore.get_object(local_path=filepath, file_path=obj_filepath)
+            data_chunk = pd.read_parquet(filepath)
+            #Combine data from all files into single dataframe:
+            if first:
+                data = data_chunk
+                first = False
+            else:
+                data = pd.concat([data,data_chunk])
 
     return data
 
@@ -209,7 +213,7 @@ def csv_to_parquet(local_path,obj_path):
 if __name__ == '__main__':
     # 
     ostore = NRObjStoreUtil.ObjectStoreUtil()
-    
+
     Q_file = 'DischargeOBS_2023_instant2_Q.csv'
     H_file = 'DischargeOBS_2023_instant2_H.csv'
     data_folder = constants.RAW_DATA_FOLDER
