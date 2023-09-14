@@ -11,6 +11,7 @@ PROV_HYDRO_SRC = ['http://www.env.gov.bc.ca/wsd/data_searches/water/Discharge.cs
 
 RAW_DATA_FOLDER = 'raw_data'
 DEST_DATA_FOLDER = 'processed_data'
+COFFEE_OUTPUT_OBJPATH = 'dischargeOBS/output/coffee'
 
 SOURCE_HYDRO_DATETIME_FORMAT = 'YYYY-MM-DD HH:mm:ssZZ'
 

@@ -7,6 +7,7 @@ import datetime
 import NRUtil.NRObjStoreUtil as NRObjStoreUtil
 import pyarrow
 from dateutil.parser import parse
+import dataretrieval.nwis as nwis
 
 #Jan/Feb/Mar: output to instant1 file, Apr/May/Jun: output to instant2 file, etc.
 #Open instant file or create it if it doesn't exist
@@ -31,6 +32,30 @@ def download_WSC_data(dest_folder):
             with open(local_filename, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=8192): 
                     f.write(chunk)
+
+#Set custom start/end download dates?
+def download_USGS_data():
+    current_datetime = datetime.datetime.now()
+    start_datetime = current_datetime.replace(second=0, hour=0, minute=0) - datetime.timedelta(days=2)
+    current_date_text = current_datetime.strftime('%Y-%m-%d')
+    start_date_text = start_datetime.strftime('%Y-%m-%d')
+
+    #Load USGS station list from csv:
+    USGS_stn_list = pd.read_csv('USGS_station_list.csv')
+
+    # specify the USGS site code for which we want data.
+    #sites = ['12401500','12404500']
+    RFC_ID = USGS_stn_list['BC RFC ID']
+    sites = [str.replace('U', '00') for str in RFC_ID]
+    # get instantaneous values (iv)
+    df = nwis.get_record(sites=sites, service='iv', start=start_date_text, end=current_date_text)
+    #Select discharge data only (parameter 00060), unstack stations to seperate columns, and convert cfs to cms:
+    Q_df = round(df['00060'].unstack(level='site_no')/35.3147,3)
+    #Select stage data only (parameter 00065), unstack stations to seperate columns, and convert feet to metres:
+    H_df = round(df['00065'].unstack(level='site_no')/3.28084,3)
+    Q_df.index = Q_df.index.tz_convert('US/Pacific').tz_localize(None)
+    H_df.index = H_df.index.tz_convert('US/Pacific').tz_localize(None)
+    return Q_df, H_df
 
 def download_provincial_data(dest_folder):
     for fname in constants.PROV_HYDRO_SRC:
@@ -85,6 +110,7 @@ def read_instantaneous_data_xlsx(src_file):
 
     return Q_inst, H_inst
 
+#To Do: Restrict WSC data to import timeframe:
 def format_WSC_data(src_folder):
     for fname in constants.SOURCE_HYDRO_DATA:
         local_filename = os.path.join(src_folder, fname.split("/")[-1])
@@ -134,7 +160,7 @@ def update_instantaneous_data(new_data, local_path, obj_path, datatype):
 
     #Data is stored in seperate parquet filea for each year and month
     #Read data from all files which overlap in date range with new data:
-    inst_data = get_instantaneous_data(new_data, datatype, local_path, obj_path)
+    inst_data = get_instantaneous_data(new_data.index, datatype, local_path, obj_path)
     #Combine new data into existing data:
     inst_updated = inst_data.combine_first(new_data)
     #Save data back into separate year-month parquet files:
@@ -142,7 +168,7 @@ def update_instantaneous_data(new_data, local_path, obj_path, datatype):
 
 def get_instantaneous_data(new_data, datatype, local_path, obj_path):
     #Grab year and month from index of new data (index must be datetime type):
-    dt_stamp = new_data.index.strftime("%Y%m")
+    dt_stamp = new_data.strftime("%Y%m")
     #Produces set of unique year-month values from index:
     dt_set = set(dt_stamp)
     first = True
@@ -155,6 +181,7 @@ def get_instantaneous_data(new_data, datatype, local_path, obj_path):
         filepath = os.path.join(local_path,filename)
         obj_filepath = os.path.join(obj_path,filename)
 
+        #Check if object is in bucket:
         if obj_filepath in ostore_objs:
             ostore.get_object(local_path=filepath, file_path=obj_filepath)
             data_chunk = pd.read_parquet(filepath)
@@ -164,7 +191,10 @@ def get_instantaneous_data(new_data, datatype, local_path, obj_path):
                 first = False
             else:
                 data = pd.concat([data,data_chunk])
-
+    
+    #Return blank dataframe if no data found:
+    if first:
+        data = pd.DataFrame()
     return data
 
 #To do: Check if files exists, create file if it does not.
@@ -235,10 +265,12 @@ if __name__ == '__main__':
     download_provincial_data(data_folder)
 
     Q_WSC, H_WSC = format_WSC_data(data_folder)
+    Q_USGS, H_USGS = download_USGS_data()
     Q_prov = format_provincial_data(prov_Q_path)
     H_prov = format_provincial_data(prov_H_path)
     #H_prov = format_provincial_data(constants.PROV_HYDRO_SRC[1].split("/")[-1])
 
-    update_instantaneous_data(pd.concat([Q_WSC,Q_prov],axis=1),dest_folder,obj_path,'Q')
-    update_instantaneous_data(pd.concat([H_WSC,H_prov],axis=1),dest_folder,obj_path,'H')
+    update_instantaneous_data(pd.concat([Q_WSC,Q_prov,Q_USGS],axis=1),dest_folder,obj_path,'Q')
+    update_instantaneous_data(pd.concat([H_WSC,H_prov,H_USGS],axis=1),dest_folder,obj_path,'H')
+
 
