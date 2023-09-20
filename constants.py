@@ -10,7 +10,10 @@ PROV_HYDRO_SRC = ['http://www.env.gov.bc.ca/wsd/data_searches/water/Discharge.cs
                   'http://www.env.gov.bc.ca/wsd/data_searches/water/Stage.csv']
 
 RAW_DATA_FOLDER = 'raw_data'
-DEST_DATA_FOLDER = 'processed_data'
+LOCAL_DATA_PATH = 'processed_data'
+PROCESSED_OBJPATH = 'dischargeOBS/processed_data'
+HOURLY_OBJPATH = 'dischargeOBS/processed_data/hourly'
+DAILY_OBJPATH = 'dischargeOBS/processed_data/daily'
 COFFEE_OUTPUT_OBJPATH = 'dischargeOBS/output/coffee'
 
 SOURCE_HYDRO_DATETIME_FORMAT = 'YYYY-MM-DD HH:mm:ssZZ'

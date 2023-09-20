@@ -47,8 +47,8 @@ def Write_Instant():
     Q_data = pd.DataFrame(data=None,index=dt_range)
     H_data = Q_data.copy()
 
-    local_path = constants.DEST_DATA_FOLDER
-    obj_path = 'dischargeOBS/processed_data/'
+    local_path = constants.LOCAL_DATA_PATH
+    obj_path = constants.PROCESSED_OBJPATH
     Qstored_data = get_instantaneous_data(dt_range, 'Q', local_path, obj_path)
     Hstored_data = get_instantaneous_data(dt_range, 'H', local_path, obj_path)
 
@@ -67,8 +67,11 @@ def Write_Instant():
         Q_data.to_excel(writer, sheet_name='ALL_Q', index = False)
         H_data.to_excel(writer, sheet_name='ALL_H', index = False)
 
-def Write_COFFEE_Instant():
-    dt_range = pd.date_range(start = '2023/1/1', end = '2024/1/2', freq = 'H')
+year = '2023'
+def Write_COFFEE_Instant(year):
+    current_year = str(int(year))
+    next_year = str(int(year)+1)
+    dt_range = pd.date_range(start = f'{current_year}/1/1', end = f'{next_year}/1/2', freq = 'H')
     dt_range = dt_range[:-1]
     dt_mmdd = dt_range.strftime("%m-%d").to_series(index = dt_range)
     dt_mmdd[dt_mmdd.eq(dt_mmdd.shift())] = ""
@@ -83,10 +86,11 @@ def Write_COFFEE_Instant():
     obstype = stationlist.str.slice(start = 8, stop = 9)    
 
     output_fname = "DISCHARGE_OBS_INST.xlsx"
-    local_path = constants.DEST_DATA_FOLDER
-    obj_path = 'dischargeOBS/processed_data/'
+    local_path = constants.LOCAL_DATA_PATH
+    obj_path = constants.PROCESSED_OBJPATH
     coffee_objpath = constants.COFFEE_OUTPUT_OBJPATH
     coffee_obj_fpath = os.path.join(coffee_objpath,output_fname)
+    write_path = os.path.join(local_path,output_fname)
 
     output = pd.DataFrame(data=None,index=dt_range,columns=stationlist)
     Qstored_data = get_instantaneous_data(dt_range, 'Q', local_path, obj_path)
@@ -120,20 +124,27 @@ def Write_COFFEE_Instant():
     output.insert(loc = 0, column = "Date", value = dt_mmdd)
     output.insert(loc = 1, column = "Hour", value = dt_HH)
 
-    write_path = os.path.join(local_path,output_fname)
-    with pd.ExcelWriter(write_path) as writer:  
-        output.to_excel(writer, sheet_name='2023', index = False)
+    ostore_objs = ostore.list_objects(coffee_objpath,return_file_names_only=True)
+    if coffee_obj_fpath in ostore_objs:
+        ostore.get_object(local_path=write_path, file_path=coffee_obj_fpath)
+        with pd.ExcelWriter(write_path,engine="openpyxl",mode='a',if_sheet_exists='replace') as writer:  
+            output.to_excel(writer, sheet_name=current_year, index = False)
+    else:
+        with pd.ExcelWriter(write_path) as writer:  
+            output.to_excel(writer, sheet_name=current_year, index = False)
     ostore.put_object(local_path=write_path, ostore_path=coffee_obj_fpath)
 
 #INCOMPLETE
 #Both DischargeOBS files must contain tabs with data from previous year for when model is run in early January and must use data from both years
+#Read from existing excel and add write current year?
 year = '2023'
 def Write_COFFEE_Daily(year):
     year = str(year)
-    local_path = constants.DEST_DATA_FOLDER
-    dly_obj_path = 'dischargeOBS/processed_data/daily'
+    local_path = constants.LOCAL_DATA_PATH
+    dly_obj_path = constants.DAILY_OBJPATH
     coffee_objpath = constants.COFFEE_OUTPUT_OBJPATH
     coffee_obj_fpath = os.path.join(coffee_objpath,"DISCHARGE_OBS.xlsx")
+    write_path = os.path.join(local_path,"DISCHARGE_OBS.xlsx")
     
     dly_Q_name = f'DischargeOBS_{year}_Q_daily.parquet'
     dly_Q_filepath = os.path.join(local_path,dly_Q_name)
@@ -178,15 +189,20 @@ def Write_COFFEE_Daily(year):
 
     output.insert(loc = 0, column = "DATE", value = dt_yyyymmdd)
 
-    write_path = os.path.join(local_path,"DISCHARGE_OBS.xlsx")
-    with pd.ExcelWriter(write_path) as writer:  
-        output.to_excel(writer, sheet_name='2023', index = False)
+    ostore_objs = ostore.list_objects(coffee_objpath,return_file_names_only=True)
+    if coffee_obj_fpath in ostore_objs:
+        ostore.get_object(local_path=write_path, file_path=coffee_obj_fpath)
+        with pd.ExcelWriter(write_path,engine="openpyxl",mode='a',if_sheet_exists='replace') as writer:  
+            output.to_excel(writer, sheet_name=year, index = False)
+    else:
+        with pd.ExcelWriter(write_path) as writer:  
+            output.to_excel(writer, sheet_name=year, index = False)
     ostore.put_object(local_path=write_path, ostore_path=coffee_obj_fpath)
 
 def Write_CLEVER_Daily(year):
     year = str(year)
-    local_path = constants.DEST_DATA_FOLDER
-    dly_obj_path = 'dischargeOBS/processed_data/daily'
+    local_path = constants.LOCAL_DATA_PATH
+    dly_obj_path = constants.DAILY_OBJPATH
     
     dly_Q_name = f'DischargeOBS_{year}_Q_daily.parquet'
     dly_Q_filepath = os.path.join(local_path,dly_Q_name)
@@ -263,9 +279,9 @@ def Update_dischargeOBS_hourly(startdate,enddate,data_type): #data_type 'Q' or '
     stationlist = stationlist[stationlist != 'nan']
     stations = stationlist.str.slice(start = 0, stop = 7) 
 
-    local_path = constants.DEST_DATA_FOLDER
-    obj_path = 'dischargeOBS/processed_data'
-    hrly_path = 'dischargeOBS/processed_data/hourly'
+    local_path = constants.LOCAL_DATA_PATH
+    obj_path = constants.PROCESSED_OBJPATH
+    hrly_path = constants.HOURLY_OBJPATH
     hrly_objs = ostore.list_objects(hrly_path,return_file_names_only=True)
 
     hrly_fname = f'DischargeOBS_{year}_{data_type}_hourly.parquet'
@@ -337,9 +353,9 @@ def Update_dischargeOBS_hourly(startdate,enddate,data_type): #data_type 'Q' or '
 data_type = 'H'
 year = '2023'
 def Update_dischargeOBS_daily(year,data_type): #data_type 'Q' or 'H'
-    local_path = constants.DEST_DATA_FOLDER
-    dly_path = 'dischargeOBS/processed_data/daily'
-    hrly_path = 'dischargeOBS/processed_data/hourly'
+    local_path = constants.LOCAL_DATA_PATH
+    dly_path = constants.DAILY_OBJPATH
+    hrly_path = constants.HOURLY_OBJPATH
 
     hrly_fname = f'DischargeOBS_{year}_{data_type}_hourly.parquet'
     dly_fname = f'DischargeOBS_{year}_{data_type}_daily.parquet'
@@ -382,8 +398,8 @@ def read_hourly_data_xlsx(src_file,year,data_type):
     return hrly_data
 
 def update_hourly_data_from_xl(year, data_type):
-    local_path = constants.DEST_DATA_FOLDER
-    hrly_path = 'dischargeOBS/processed_data/hourly'
+    local_path = constants.LOCAL_DATA_PATH
+    hrly_path = constants.HOURLY_OBJPATH
 
     hrly_fname = f'DischargeOBS_{year}_{data_type}_hourly.parquet'
     filepath = os.path.join(local_path,hrly_fname)

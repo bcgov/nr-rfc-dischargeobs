@@ -247,7 +247,7 @@ if __name__ == '__main__':
     Q_file = 'DischargeOBS_2023_instant2_Q.csv'
     H_file = 'DischargeOBS_2023_instant2_H.csv'
     data_folder = constants.RAW_DATA_FOLDER
-    dest_folder = constants.DEST_DATA_FOLDER
+    dest_folder = constants.LOCAL_DATA_PATH
     obj_path = 'dischargeOBS/processed_data/'
     Q_path = os.path.join(dest_folder, Q_file)
     H_path = os.path.join(dest_folder, H_file)
