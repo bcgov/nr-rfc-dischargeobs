@@ -433,7 +433,7 @@ if __name__ == '__main__':
     Update_dischargeOBS_daily(year,'Q')
     Update_dischargeOBS_daily(year,'H')
 
-    Write_COFFEE_Instant()
+    Write_COFFEE_Instant(year)
     Write_COFFEE_Daily(year)
     #Write_Instant()
 
