@@ -15,6 +15,9 @@ PROCESSED_OBJPATH = 'dischargeOBS/processed_data'
 HOURLY_OBJPATH = 'dischargeOBS/processed_data/hourly'
 DAILY_OBJPATH = 'dischargeOBS/processed_data/daily'
 COFFEE_OUTPUT_OBJPATH = 'dischargeOBS/output/coffee'
+CLEVER_OUTPUT_OBJPATH = 'dischargeOBS/output/clever'
+FRASER_OUTPUT_OBJPATH = 'dischargeOBS/output/warns/fraser'
+SKEENA_OUTPUT_OBJPATH = 'dischargeOBS/output/warns/skeena'
 
 SOURCE_HYDRO_DATETIME_FORMAT = 'YYYY-MM-DD HH:mm:ssZZ'
 

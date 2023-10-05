@@ -11,6 +11,8 @@ import NRUtil.NRObjStoreUtil as NRObjStoreUtil
 import discharge_obs_pd
 import xlsxwriter
 import xlwt
+from xlrd import open_workbook
+from xlutils.copy import copy
 
 #def write_instantaneous_xl():
 def get_instantaneous_data(new_data, datatype, local_path, obj_path):
@@ -134,73 +136,11 @@ def Write_COFFEE_Instant(year):
             output.to_excel(writer, sheet_name=current_year, index = False)
     ostore.put_object(local_path=write_path, ostore_path=coffee_obj_fpath)
 
-#INCOMPLETE
-#Both DischargeOBS files must contain tabs with data from previous year for when model is run in early January and must use data from both years
-#Read from existing excel and add write current year?
-year = '2023'
-def Write_COFFEE_Daily(year):
+#Generalize function to write CLEVER/COFFEE/other outputs using station list as input
+#Use xlwt for .xls files
+def Write_Model_Input(year, stationlist, output_objpath, output_filename):
     year = str(year)
-    local_path = constants.LOCAL_DATA_PATH
-    dly_obj_path = constants.DAILY_OBJPATH
-    coffee_objpath = constants.COFFEE_OUTPUT_OBJPATH
-    coffee_obj_fpath = os.path.join(coffee_objpath,"DISCHARGE_OBS.xlsx")
-    write_path = os.path.join(local_path,"DISCHARGE_OBS.xlsx")
-    
-    dly_Q_name = f'DischargeOBS_{year}_Q_daily.parquet'
-    dly_Q_filepath = os.path.join(local_path,dly_Q_name)
-    dly_Q_objpath = os.path.join(dly_obj_path,dly_Q_name)
-    dly_H_name = f'DischargeOBS_{year}_H_daily.parquet'
-    dly_H_filepath = os.path.join(local_path,dly_H_name)
-    dly_H_objpath = os.path.join(dly_obj_path,dly_H_name)
-
-    year2 = str(int(year)+1)  
-    dt_range = pd.date_range(start = f'{year}/1/1', end = f'{year2}/1/2', freq = 'D')
-    dt_range = dt_range[:-1]
-    dt_yyyymmdd = dt_range.strftime("%Y-%m-%d").to_series(index = dt_range)
-    dt_yyyymmdd[dt_yyyymmdd.eq(dt_yyyymmdd.shift())] = ""
-
-    #Read List of COFFEE stations
-    #!!!Investigate alternative methods of storing Coffee Station List!!!
-    stationlist = pd.read_csv('Model_Station_List.csv').astype(str).COFFEE.dropna()
-    stationlist = stationlist[stationlist != 'nan']
-    stations = stationlist.str.slice(start = 0, stop = 7)
-    obstype = stationlist.str.slice(start = 8, stop = 9)    
-
-    output = pd.DataFrame(data=None,index=dt_range,columns=stationlist)
-
-    ostore.get_object(local_path=dly_Q_filepath, file_path=dly_Q_objpath)
-    Qstored_data = pd.read_parquet(dly_Q_filepath)
-    ostore.get_object(local_path=dly_H_filepath, file_path=dly_H_objpath)
-    Hstored_data = pd.read_parquet(dly_H_filepath)
-
-    for col in range(len(stationlist)):
-        if obstype[col] == 'Q':
-            if stations[col] in Qstored_data.columns:
-                output.iloc[:,col] = Qstored_data.loc[:,stations[col]]
-                #output.iloc[:,col] = output.iloc[:,col].update(Qstored_data.loc[:,stations[col]])
-            else: continue
-        else:
-            if stations[col] in Hstored_data.columns:
-                output.iloc[:,col] = Hstored_data.loc[:,stations[col]]
-                #output.iloc[:,col] = output.iloc[:,col].update(Hstored_data.loc[:,stations[col]])
-            else: continue        
-
-    output.loc[:,'08HB017-Q'] = 1.1907*output.loc[:,'08HB023-Q'] + 1.9845*output.loc[:,'08HB008-Q'] + 20.819
-
-    output.insert(loc = 0, column = "DATE", value = dt_yyyymmdd)
-
-    ostore_objs = ostore.list_objects(coffee_objpath,return_file_names_only=True)
-    if coffee_obj_fpath in ostore_objs:
-        ostore.get_object(local_path=write_path, file_path=coffee_obj_fpath)
-        with pd.ExcelWriter(write_path,engine="openpyxl",mode='a',if_sheet_exists='replace') as writer:  
-            output.to_excel(writer, sheet_name=year, index = False)
-    else:
-        with pd.ExcelWriter(write_path) as writer:  
-            output.to_excel(writer, sheet_name=year, index = False)
-    ostore.put_object(local_path=write_path, ostore_path=coffee_obj_fpath)
-
-def Write_CLEVER_Daily(year):
-    year = str(year)
+    filetype = output_filename.split('.')[-1]
     local_path = constants.LOCAL_DATA_PATH
     dly_obj_path = constants.DAILY_OBJPATH
     
@@ -210,6 +150,9 @@ def Write_CLEVER_Daily(year):
     dly_H_name = f'DischargeOBS_{year}_H_daily.parquet'
     dly_H_filepath = os.path.join(local_path,dly_H_name)
     dly_H_objpath = os.path.join(dly_obj_path,dly_H_name)
+    
+    output_obj_fpath = os.path.join(output_objpath,output_filename)
+    write_path = os.path.join(local_path,output_filename)
 
     year2 = str(int(year)+1)  
     dt_range = pd.date_range(start = f'{year}/1/1', end = f'{year2}/1/2', freq = 'D')
@@ -219,10 +162,9 @@ def Write_CLEVER_Daily(year):
 
     #Read List of CLEVER stations
     #!!!Investigate alternative methods of storing Coffee Station List!!!
-    stationlist = pd.read_csv('Model_Station_List.csv').astype(str).CLEVER.dropna()
-    stationlist = stationlist[stationlist != 'nan']
+    stationlist = stationlist.dropna().astype(str)
     stations = stationlist.str.slice(start = 0, stop = 7)
-    obstype = stationlist.str.slice(start = 8, stop = 9)    
+    obstype = stationlist.str.slice(start = 8, stop = 9)
 
     output = pd.DataFrame(data=None,index=dt_range,columns=stationlist)
 
@@ -244,13 +186,73 @@ def Write_CLEVER_Daily(year):
             else: continue        
 
     #Use eval() function to evaluate functions stored in text or csv file
-    output.loc[:,'08HB017-Q'] = 1.1907*output.loc[:,'08HB023-Q'] + 1.9845*output.loc[:,'08HB008-Q'] + 20.819
+    Station_estimates = pd.read_csv('Station_Estimates.csv')
+    #Find stations contained both in output and in station estimate list:
+    estimated_stations = set(Station_estimates.Station).intersection(stations)
+    #Loop through these stations and estimate their values based on equations in station estimate list:
+    for stn in estimated_stations:
+        line = Station_estimates[Station_estimates.Station==stn]
+        formula =  line.Estimate.values[0]
+        stns = in_brackets(formula)
+        for txt in stns:
+            formula = formula.replace(txt,txt+'-Q')
+        formula = formula.replace('{',r"output.loc[:,'").replace('}',r"']").replace('^','**')
+        output.loc[:,stn+'-Q'] = eval(formula)
 
     output.insert(loc = 0, column = "DATE", value = dt_yyyymmdd)
 
-    write_path = os.path.join(local_path,"DISCHARGE_OBS.xlsx")
-    with pd.ExcelWriter(write_path) as writer:  
-        output.to_excel(writer, sheet_name='2023', index = False)
+    ostore_objs = ostore.list_objects(output_objpath,return_file_names_only=True)
+    if output_obj_fpath in ostore_objs:
+        ostore.get_object(local_path=write_path, file_path=output_obj_fpath)
+        if filetype=='xlsx':
+            with pd.ExcelWriter(write_path,engine="openpyxl",mode='a',if_sheet_exists='replace') as writer:  
+                output.to_excel(writer, sheet_name=year, index = False)
+        elif filetype=='xls':
+            rb = open_workbook(write_path)
+            wb = copy(rb)
+            if year in rb.sheet_names():
+                ws = wb.get_sheet(year)
+            else:
+                ws = wb.add_sheet(year)
+            for col in range(len(output.columns)):
+                ws.write(0, col, output.columns[col])
+                for row in range(len(output)):
+                    if col == 0:
+                        ws.write(row+1, col, output.iloc[row,col])
+                    elif not np.isnan(output.iloc[row,col]):
+                        ws.write(row+1, col, output.iloc[row,col])
+                    else:
+                        ws.write(row+1, col,'')
+            wb.save(write_path)
+    else:
+        if filetype=='xlsx':
+            with pd.ExcelWriter(write_path) as writer:  
+                output.to_excel(writer, sheet_name=year, index = False)
+        elif filetype=='xls':
+            wb = xlwt.Workbook()
+            ws = wb.add_sheet(year)
+            for col in range(len(output.columns)):
+                ws.write(0, col, output.columns[col])
+                for row in range(len(output)):
+                    if col == 0:
+                        ws.write(row+1, col, output.iloc[row,col])
+                    elif not np.isnan(output.iloc[row,col]):
+                        ws.write(row+1, col, output.iloc[row,col])
+                    else:
+                        ws.write(row+1, col,'')
+            wb.save(write_path)
+    ostore.put_object(local_path=write_path, ostore_path=output_obj_fpath)
+
+def in_brackets(string):
+    substrings = []
+    split_str = string.split("{")
+ 
+    for s in split_str[1:]:
+        split_s = s.split("}")
+        if len(split_s) > 1:
+            substrings.append(split_s[0])
+
+    return set(substrings)
 
 #Remove negative discharges
 #Interpolate 5-min data - seperate 5-min 'QCd' product
@@ -433,8 +435,13 @@ if __name__ == '__main__':
     Update_dischargeOBS_daily(year,'Q')
     Update_dischargeOBS_daily(year,'H')
 
+    stationlist = pd.read_csv('Model_Station_List.csv')
+
     Write_COFFEE_Instant(year)
-    Write_COFFEE_Daily(year)
+    Write_Model_Input(year,stationlist.COFFEE,constants.COFFEE_OUTPUT_OBJPATH,"DISCHARGE_OBS.xlsx")
+    Write_Model_Input(year,stationlist.CLEVER,constants.CLEVER_OUTPUT_OBJPATH,"DISCHARGE_OBS.xlsx")
+    Write_Model_Input(year,stationlist.FRASER,constants.FRASER_OUTPUT_OBJPATH,"obsflows.xls")
+    Write_Model_Input(year,stationlist.SKEENA,constants.SKEENA_OUTPUT_OBJPATH,"obsflows.xls")
     #Write_Instant()
 
     
