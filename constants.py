@@ -12,6 +12,7 @@ PROV_HYDRO_SRC = ['http://www.env.gov.bc.ca/wsd/data_searches/water/Discharge.cs
 RAW_DATA_FOLDER = 'raw_data'
 LOCAL_DATA_PATH = 'processed_data'
 PROCESSED_OBJPATH = 'dischargeOBS/processed_data'
+INST_QC_OBJPATH = 'dischargeOBS/processed_data/instantaneous_qc'
 HOURLY_OBJPATH = 'dischargeOBS/processed_data/hourly'
 DAILY_OBJPATH = 'dischargeOBS/processed_data/daily'
 COFFEE_OUTPUT_OBJPATH = 'dischargeOBS/output/coffee'

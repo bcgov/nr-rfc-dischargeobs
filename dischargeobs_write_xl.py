@@ -15,7 +15,7 @@ from xlrd import open_workbook
 from xlutils.copy import copy
 
 #def write_instantaneous_xl():
-def get_instantaneous_data(new_data, datatype, local_path, obj_path):
+def get_instantaneous_data(new_data, datatype, local_path, obj_path, qc):
     #Grab year and month from index of new data (index must be datetime type):
     dt_stamp = new_data.strftime("%Y%m")
     #Produces set of unique year-month values from index:
@@ -25,7 +25,10 @@ def get_instantaneous_data(new_data, datatype, local_path, obj_path):
     ostore_objs = ostore.list_objects(obj_path,return_file_names_only=True)
     for i in dt_set:
         #File naming convention set here:
-        filename = 'DischargeOBS_'+ i + '_' + datatype + '.parquet'
+        if qc == 'raw':
+            filename = 'DischargeOBS_'+ i + '_' + datatype + '.parquet'
+        elif qc == 'qc':
+            filename = 'DischargeOBS_qc_'+ i + '_' + datatype + '.parquet'
         filepath = os.path.join(local_path,filename)
         obj_filepath = os.path.join(obj_path,filename)
         if obj_filepath in ostore_objs:
@@ -37,7 +40,11 @@ def get_instantaneous_data(new_data, datatype, local_path, obj_path):
                 first = False
             else:
                 data = pd.concat([data,data_chunk])
-    return data
+    if first:
+        return pd.DataFrame
+    else:
+        return data
+
 
 def Write_Instant():
     dt_range = pd.date_range(start = '2023/7/1', end = '2023/10/1', freq = '5min')
@@ -51,8 +58,8 @@ def Write_Instant():
 
     local_path = constants.LOCAL_DATA_PATH
     obj_path = constants.PROCESSED_OBJPATH
-    Qstored_data = get_instantaneous_data(dt_range, 'Q', local_path, obj_path)
-    Hstored_data = get_instantaneous_data(dt_range, 'H', local_path, obj_path)
+    Qstored_data = get_instantaneous_data(dt_range, 'Q', local_path, obj_path,'raw')
+    Hstored_data = get_instantaneous_data(dt_range, 'H', local_path, obj_path,'raw')
 
     Q_data = Q_data.combine_first(Qstored_data)
     Q_data.insert(loc = 0, column = "Day", value = dt_mmdd)
@@ -95,8 +102,8 @@ def Write_COFFEE_Instant(year):
     write_path = os.path.join(local_path,output_fname)
 
     output = pd.DataFrame(data=None,index=dt_range,columns=stationlist)
-    Qstored_data = get_instantaneous_data(dt_range, 'Q', local_path, obj_path)
-    Hstored_data = get_instantaneous_data(dt_range, 'H', local_path, obj_path)
+    Qstored_data = get_instantaneous_data(dt_range, 'Q', local_path, obj_path,'raw')
+    Hstored_data = get_instantaneous_data(dt_range, 'H', local_path, obj_path,'raw')
 
     for col in range(len(stationlist)):
         if obstype[col] == 'Q':
@@ -290,7 +297,7 @@ def Update_dischargeOBS_hourly(startdate,enddate,data_type): #data_type 'Q' or '
     filepath = os.path.join(local_path,hrly_fname)
     hrly_objpath = os.path.join(hrly_path,hrly_fname)
 
-    inst_data = get_instantaneous_data(import_range, data_type, local_path, obj_path)
+    inst_data = get_instantaneous_data(import_range, data_type, local_path, obj_path,'raw')
     #Restrict data to within import start date and end date:
     inst_data = inst_data[np.all([inst_data.index>startdate,inst_data.index<enddate],axis=0)]
     inst_names = inst_data.columns.to_series()

@@ -55,6 +55,10 @@ def download_USGS_data():
     H_df = round(df['00065'].unstack(level='site_no')/3.28084,3)
     Q_df.index = Q_df.index.tz_convert('US/Pacific').tz_localize(None)
     H_df.index = H_df.index.tz_convert('US/Pacific').tz_localize(None)
+    #Remove duplicated values (duplicate index will cause error in later steps)
+    #Note daylight savings results in duplicate values. Consider alternate approach
+    Q_df = Q_df[~Q_df.index.duplicated()]
+    H_df = H_df[~H_df.index.duplicated()]
     return Q_df, H_df
 
 def download_provincial_data(dest_folder):
@@ -91,6 +95,7 @@ def format_provincial_data(src_file):
     df_prov = df_prov[df_prov.iloc[:,col_datetime]>start_datetime]
     df_prov = df_prov[df_prov.iloc[:,col_datetime]<current_datetime]
     #Pivot data:
+    df_prov = df_prov.drop_duplicates(subset=['Location ID',' Date/Time(UTC)'], keep='first')
     df_prov = df_prov.pivot(index = list(df_prov)[col_datetime],columns = list(df_prov)[col_ID], values = list(df_prov)[col_val])
     return df_prov
 
@@ -137,7 +142,6 @@ def format_WSC_data(src_folder):
     return Q_inst, H_inst
 
 def read_csv_data(src_file):
-
     ext = os.path.splitext(src_file)[1]
     if ext=='.csv':
         df = pd.read_csv(src_file)
@@ -160,13 +164,13 @@ def update_instantaneous_data(new_data, local_path, obj_path, datatype):
 
     #Data is stored in seperate parquet filea for each year and month
     #Read data from all files which overlap in date range with new data:
-    inst_data = get_instantaneous_data(new_data.index, datatype, local_path, obj_path)
+    inst_data = get_instantaneous_data(new_data.index, datatype, local_path, obj_path,'raw')
     #Combine new data into existing data:
     inst_updated = inst_data.combine_first(new_data)
     #Save data back into separate year-month parquet files:
     save_instantaneous_data(inst_updated, datatype, local_path, obj_path)
 
-def get_instantaneous_data(new_data, datatype, local_path, obj_path):
+def get_instantaneous_data(new_data, datatype, local_path, obj_path, qc):
     #Grab year and month from index of new data (index must be datetime type):
     dt_stamp = new_data.strftime("%Y%m")
     #Produces set of unique year-month values from index:
@@ -174,14 +178,14 @@ def get_instantaneous_data(new_data, datatype, local_path, obj_path):
     first = True
     #Loops though unique year-month values from new data. Load instantaneous data files associated with these year-months:
     ostore_objs = ostore.list_objects(obj_path,return_file_names_only=True)
-
     for i in dt_set:
         #File naming convention set here:
-        filename = 'DischargeOBS_'+ i + '_' + datatype + '.parquet'
+        if qc == 'raw':
+            filename = 'DischargeOBS_'+ i + '_' + datatype + '.parquet'
+        elif qc == 'qc':
+            filename = 'DischargeOBS_qc_'+ i + '_' + datatype + '.parquet'
         filepath = os.path.join(local_path,filename)
         obj_filepath = os.path.join(obj_path,filename)
-
-        #Check if object is in bucket:
         if obj_filepath in ostore_objs:
             ostore.get_object(local_path=filepath, file_path=obj_filepath)
             data_chunk = pd.read_parquet(filepath)
@@ -191,11 +195,26 @@ def get_instantaneous_data(new_data, datatype, local_path, obj_path):
                 first = False
             else:
                 data = pd.concat([data,data_chunk])
-    
-    #Return blank dataframe if no data found:
     if first:
-        data = pd.DataFrame()
-    return data
+        return pd.DataFrame
+    else:
+        return data
+
+current_datetime = datetime.datetime.now()
+start_datetime = current_datetime.replace(second=0, hour=0, minute=0) - datetime.timedelta(days=2)
+enddate = (current_datetime.replace(second=0, hour=0, minute=0) + datetime.timedelta(days=1)).strftime('%Y/%m/%d')
+startdate = start_datetime.strftime('%Y/%m/%d')
+datatype = 'Q'
+def qc_instantaneous_data(startdate,enddate,datatype):
+    local_path = constants.LOCAL_DATA_PATH
+    raw_inst_path = constants.PROCESSED_OBJPATH
+    qc_inst_path = constants.INST_QC_OBJPATH
+
+    qc_range = pd.date_range(start = startdate, end = enddate, freq = '5min')
+    raw_data = get_instantaneous_data(qc_range, datatype, local_path, raw_inst_path,'raw')
+    qc_data = get_instantaneous_data(qc_range, datatype, local_path, qc_inst_path,'qc')
+
+
 
 #To do: Check if files exists, create file if it does not.
 def save_instantaneous_data(data, datatype, local_path, obj_path):
