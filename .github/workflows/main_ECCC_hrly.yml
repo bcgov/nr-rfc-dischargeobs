@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  export_dischargeobs:
+  export_ECCC_hourly:
     defaults:
       run:
         shell: bash
