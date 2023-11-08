@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import NRUtil.NRObjStoreUtil as NRObjStoreUtil
 
-
+ostore = NRObjStoreUtil.ObjectStoreUtil()
 default_date_format = '%Y%m%d'
 
 # default is to use today's date
