@@ -121,8 +121,8 @@ if __name__ == '__main__':
     TA.columns = TA.columns.str[1:]
     PC.columns = PC.columns.str[1:]
 
-    TA.to_csv(TA_path)
-    PC.to_csv(PC_path)
+    TA.to_csv(TA_local)
+    PC.to_csv(PC_local)
 
     ostore.put_object(local_path=TA_local, ostore_path=TA_obj)
     ostore.put_object(local_path=PC_local, ostore_path=PC_obj)
