@@ -1,0 +1,51 @@
+name: Export ECCC Hourly
+
+on:
+  # push:
+  #   branches:
+  #     - "main"
+  schedule:
+  # job should run at 8.01 pst which translates to 4pm UTC
+    - cron: '10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  export_dischargeobs:
+    defaults:
+      run:
+        shell: bash
+    name: 'Export ECCC hourly data'
+    runs-on: ubuntu-20.04
+    environment: RUN
+    env:
+      OBJ_STORE_BUCKET: ${{ secrets.OBJ_STORE_BUCKET }}
+      OBJ_STORE_SECRET: ${{ secrets.OBJ_STORE_SECRET }}
+      OBJ_STORE_USER: ${{ secrets.OBJ_STORE_USER }}
+      OBJ_STORE_HOST: ${{ secrets.OBJ_STORE_HOST }}
+
+    steps:
+    - uses: actions/checkout@v3
+      id: checkout
+      with:
+       fetch-depth: 0
+
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - id: install_dependencies
+      name: install python dependencies
+      shell: bash
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+    - id: debug
+      name: debug and list files
+      shell: bash
+      run: |
+        ls -la
+    - id: export_ECCC_hourly
+      name: export ECCC hourly data
+      shell: bash
+      run: |
+        python ECCC_hourly.py
