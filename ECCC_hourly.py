@@ -15,6 +15,7 @@ def isnumber(x):
     except:
         return False
 
+#Search for desired variables in xml file, grab associated values:
 def retrieve_xml_values(xml_file,var_names):
     tree = ET.parse(xml_file)
     root = tree.getroot()
@@ -37,6 +38,8 @@ if __name__ == '__main__':
         current_date.replace(hour=23)
 
 
+    #Grab list of stations to download data for from object store:
+    #This is the updated station list for ClimateOBS
     stn_list_local = 'raw_data/ECCC_stationlist.csv'
     ostore.get_object(local_path=stn_list_local, file_path='RFC_DATA/ECCC/metadata/ECCC_stationlist.csv')
     stn_metadata = pd.read_csv(stn_list_local)
@@ -50,7 +53,7 @@ if __name__ == '__main__':
     if not os.path.exists(local_file_path):
         os.makedirs(local_file_path)
 
-
+    #List of variables to grab data for:
     var_names = ['air_temp','avg_air_temp_pst1hr','pcpn_amt_pst1hr']
 
     dt_txt = current_date.strftime('%Y%m%d')
@@ -71,12 +74,15 @@ if __name__ == '__main__':
         output_ind = pd.MultiIndex.from_product([stn_str,dt_range], names=["Station", "DateTime"])
         output = pd.DataFrame(data=None,index=output_ind,columns=var_names+['f_read'])
 
-
+    #Download ECCC weather observation data from DataMart, store values in dataframe:
+    #Loop through each station in station list, each hour in datetime range:
     for stn in stn_str:
         for dt in dt_range_utc:
+            #Format html string for data location:
             dt_str = dt.strftime('%Y-%m-%d-%H00')
             date_str = dt.strftime(default_date_format)
             remote_location=f'http://hpfx.collab.science.gc.ca/{date_str}/WXO-DD/observations/swob-ml/{date_str}/'
+            #file names differs between manual and automated stations, try both:
             fname_man = f'{stn}/{dt_str}-{stn}-MAN-swob.xml'
             fname_auto = f'{stn}/{dt_str}-{stn}-AUTO-swob.xml'
             web_path_auto = os.path.join(remote_location,fname_auto)
@@ -84,10 +90,12 @@ if __name__ == '__main__':
             local_filename = os.path.join(local_file_path,f'{stn}-{dt_str}.xml')
 
             #Download file and write to local file name:
-
+            #Check if file for station/time has already been read in, skip file download if so:
             if output.loc[(stn,dt - datetime.timedelta(hours=8)),'f_read']!=True:
+                #Try filename format for automatic station, else try format for manual station:
                 with requests.get(web_path_auto, stream=True) as r:
                     #r.raise_for_status()
+                    #If file location exists, proceed with file download:
                     if r.status_code == requests.codes.ok:
                         with open(local_filename, 'wb') as f:
                             for chunk in r.iter_content(chunk_size=8192): 
@@ -98,33 +106,37 @@ if __name__ == '__main__':
                                 with open(local_filename, 'wb') as f:
                                     for chunk in r2.iter_content(chunk_size=8192): 
                                         f.write(chunk)
+                #If file was downloaded succefully, write variables to dataframe:
                 if os.path.exists(local_filename):
                     output.loc[(stn,dt - datetime.timedelta(hours=8)),var_names] = retrieve_xml_values(local_filename,var_names).values
+                    #Set f_read to True so script does not re-download file in subsequent runs:
                     output.loc[stn,dt - datetime.timedelta(hours=8)].iloc[-1] = True
             
-
+    #Save dataframe to parquet file and send to object store:
     output.to_parquet(local_data_fpath)
     ostore.put_object(local_path=local_data_fpath, ostore_path=all_data_objpath)
 
+    #Reformat data for each variable into their own dataframes:
     TA = output.loc[:,'air_temp'].unstack(0)
     PC = output.loc[:,'pcpn_amt_pst1hr'].unstack(0)
 
-
-
+    #Remove non-numeric (and nan) values:
     PC[~PC.applymap(isnumber)] = ''
 
+    #Set local and object store filepaths:
     local_folder = 'processed_data/'
     obj_folder = 'RFC_DATA/ECCC/hourly/csv/'
     TA_local = os.path.join(local_folder,f'TA_{dt_txt}.csv')
     PC_local = os.path.join(local_folder,f'PC_{dt_txt}.csv')
     TA_obj = os.path.join(obj_folder,f'TA_{dt_txt}.csv')
     PC_obj = os.path.join(obj_folder,f'PC_{dt_txt}.csv')
+    #Remove leading 'C' from station names:
     TA.columns = TA.columns.str[1:]
     PC.columns = PC.columns.str[1:]
 
+    #Save temperature/precip dataframes as csv files and send to object store:
     TA.to_csv(TA_local)
     PC.to_csv(PC_local)
-
     ostore.put_object(local_path=TA_local, ostore_path=TA_obj)
     ostore.put_object(local_path=PC_local, ostore_path=PC_obj)
 
