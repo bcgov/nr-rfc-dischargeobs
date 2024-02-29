@@ -166,7 +166,13 @@ def update_instantaneous_data(new_data, local_path, obj_path, datatype):
     #Read data from all files which overlap in date range with new data:
     inst_data = get_instantaneous_data(new_data.index, datatype, local_path, obj_path,'raw')
     #Combine new data into existing data:
-    inst_updated = inst_data.combine_first(new_data)
+    if not new_data.empty and not inst_data.empty:
+        inst_updated = inst_data.combine_first(new_data)
+    elif not inst_data.empty:
+        inst_updated = inst_data
+    elif not new_data.empty:
+        inst_updated = new_data
+          
     #Save data back into separate year-month parquet files:
     save_instantaneous_data(inst_updated, datatype, local_path, obj_path)
 
@@ -205,6 +211,7 @@ start_datetime = current_datetime.replace(second=0, hour=0, minute=0) - datetime
 enddate = (current_datetime.replace(second=0, hour=0, minute=0) + datetime.timedelta(days=1)).strftime('%Y/%m/%d')
 startdate = start_datetime.strftime('%Y/%m/%d')
 datatype = 'Q'
+
 def qc_instantaneous_data(startdate,enddate,datatype):
     local_path = constants.LOCAL_DATA_PATH
     raw_inst_path = constants.PROCESSED_OBJPATH
@@ -213,7 +220,6 @@ def qc_instantaneous_data(startdate,enddate,datatype):
     qc_range = pd.date_range(start = startdate, end = enddate, freq = '5min')
     raw_data = get_instantaneous_data(qc_range, datatype, local_path, raw_inst_path,'raw')
     qc_data = get_instantaneous_data(qc_range, datatype, local_path, qc_inst_path,'qc')
-
 
 
 #To do: Check if files exists, create file if it does not.
@@ -245,19 +251,31 @@ def csv_to_parquet(local_path,obj_path):
     df.to_parquet(local_parquet_path)
     ostore.put_object(local_path=local_parquet_path, ostore_path=obj_parquet_path)
 
+def write_PVDD(prov_Q_path,prov_H_path):
+    #Set columns of dataframes containing station ID, data values, and datetimes:
+    col_datetime = 5
+    col_ID = 0
+    col_val = 7
+    Q_data = pd.read_csv(prov_Q_path).iloc[:,[col_datetime,col_ID,col_val]]
+    H_data = pd.read_csv(prov_H_path).iloc[:,[col_datetime,col_ID,col_val]]
+    Q_data.rename({" Value": "Discharge"}, axis='columns', inplace=True)
+    H_data.rename({" Value": "Stage"}, axis='columns', inplace=True)
+    prov_stn_list = pd.read_csv('provincial_station_list.csv',index_col=0)
+    #Filter dataframe to only contain stations in provincial station list:
+    for stn in prov_stn_list.index:
+        stn_Q = Q_data[Q_data.iloc[:,1]==stn]
+        stn_H = H_data[H_data.iloc[:,1]==stn]
+        stn_Q.index = stn_Q.iloc[:,0]
+        stn_H.index = stn_H.iloc[:,0]
+        stn_data = pd.concat([stn_Q,stn_H],axis=1)
+        stn_data.loc[:,"Time_PST"] = pd.to_datetime(stn_data.index).copy().tz_localize('UTC').tz_convert('US/Pacific').tz_localize(None)
+        stn_data.loc[:,"id"] = stn
+        output = stn_data.loc[:,["id","Time_PST","Stage","Discharge"]]
+        local_PVDD_path = os.path.join(constants.LOCAL_DATA_PATH,f'{prov_stn_list.loc[stn].values[0]}.csv')
+        obj_PVDD_path = os.path.join("dischargeOBS/PVDD",f'{prov_stn_list.loc[stn].values[0]}.csv')
+        output.to_csv(local_PVDD_path,index=False)
+        ostore.put_object(local_path=local_PVDD_path, ostore_path=obj_PVDD_path)
 
-
-#def write_hydro_data(infile,outfile):
-    '''
-    start = "2023-04-01"
-    stop = "2023-07-01"
-    DateSeq5min = pd.date_range(start, stop, freq="5min")
-    DischargeOBS5min = pd.DataFrame(np.nan, index=DateSeq5min, columns=stn_list.ID)
-    discharge_obs_pivot = df.pivot(index = list(df)[1],columns = list(df)[0], values = list(df)[6])
-    DischargeOBS5min_updated = DischargeOBS5min.combine_first(discharge_obs_pivot)
-    DischargeOBS5min_updated.to_csv('out.csv')
-    '''
-    #Pandas does not support pendulum :(
 
 if __name__ == '__main__':
     # 
@@ -285,6 +303,7 @@ if __name__ == '__main__':
 
     Q_WSC, H_WSC = format_WSC_data(data_folder)
     Q_USGS, H_USGS = download_USGS_data()
+    write_PVDD(prov_Q_path,prov_H_path)
     Q_prov = format_provincial_data(prov_Q_path)
     H_prov = format_provincial_data(prov_H_path)
     #H_prov = format_provincial_data(constants.PROV_HYDRO_SRC[1].split("/")[-1])
