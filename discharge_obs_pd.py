@@ -245,7 +245,14 @@ def save_instantaneous_data(data, datatype, local_path, obj_path):
         obj_filepath = os.path.join(obj_path,filename)
         data_chunk.to_parquet(filepath)
         LOGGER.debug(f"update instantaneous data to ostore {obj_filepath}")
-        ostore.put_object(local_path=filepath, ostore_path=obj_filepath)
+        try:
+            ostore.put_object(local_path=filepath, ostore_path=obj_filepath)
+        except minio.error.S3Error as e:
+            LOGGER.error(f"error putting object to ostore: {e}")
+            LOGGER.info("going to delete versions of the file, and retry...")
+            delete_all_non_current_version(obj_filepath)
+            ostore.put_object(local_path=filepath, ostore_path=obj_filepath)
+
 
 def return_data_path(url):
     r = requests.head(url)
@@ -259,7 +266,13 @@ def csv_to_parquet(local_path,obj_path):
     local_parquet_path = os.path.splitext(local_path)[0] + '.parquet'
     obj_parquet_path = os.path.splitext(obj_path)[0] + '.parquet'
     df.to_parquet(local_parquet_path)
-    ostore.put_object(local_path=local_parquet_path, ostore_path=obj_parquet_path)
+    try:
+        ostore.put_object(local_path=local_parquet_path, ostore_path=obj_parquet_path)
+    except minio.error.S3Error as e:
+        LOGGER.error(f"error putting object to ostore: {e}")
+        LOGGER.info("going to delete versions of the file, and retry...")
+        delete_all_non_current_version(obj_parquet_path)
+        ostore.put_object(local_path=local_parquet_path, ostore_path=obj_parquet_path)
 
 def delete_all_non_current_version(ostore_path):
     """
