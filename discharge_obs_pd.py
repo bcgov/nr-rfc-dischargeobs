@@ -34,8 +34,8 @@ def download_WSC_data(dest_folder):
         local_filename = os.path.join(dest_folder,fname.split("/")[-1])
         file_url = os.path.join(current_datetime.strftime(constants.DATAMART_URL),fname)
         #Download file and write to local file name:
-        LOGGER.info(f"Downloading {file_url} to {local_filename}, status code {r.status_code}")
         with requests.get(file_url, stream=True) as r:
+            LOGGER.info(f"Downloading {file_url} to {local_filename}, status code {r.status_code}")
             #r.raise_for_status()
             if r.status_code == requests.codes.ok:
                 with open(local_filename, 'wb') as f:
@@ -133,17 +133,18 @@ def format_WSC_data(src_folder):
         LOGGER.info(f"reading file to dataframe: {local_filename}")
 
         #Read in WSC data from file:
-        df = pd.read_csv(local_filename)
-        #Convert dates in dataframe to datetime format:
-        df.Date = pd.to_datetime(df.Date)
-        #Remove timezone (multiple timezones within the datetime column prevent the column from having datetime datatype)
-        df.Date = df.Date.apply(lambda x: x.replace(tzinfo=None))
-        #Round datetimes to nearest 5 min interval:
-        df.Date = df.Date.round("5min")
-        if fname==constants.SOURCE_HYDRO_DATA[0]:
-            new_data = df
-        else:
-            new_data = pd.concat([new_data,df])
+        if os.path.isfile(local_filename):
+            df = pd.read_csv(local_filename)
+            #Convert dates in dataframe to datetime format:
+            df.Date = pd.to_datetime(df.Date)
+            #Remove timezone (multiple timezones within the datetime column prevent the column from having datetime datatype)
+            df.Date = df.Date.apply(lambda x: x.replace(tzinfo=None))
+            #Round datetimes to nearest 5 min interval:
+            df.Date = df.Date.round("5min")
+            if fname==constants.SOURCE_HYDRO_DATA[0]:
+                new_data = df
+            else:
+                new_data = pd.concat([new_data,df])
 
 
     new_data.drop_duplicates(subset=[new_data.columns[0],new_data.columns[1]],inplace=True)
