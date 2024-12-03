@@ -8,6 +8,11 @@ import NRUtil.NRObjStoreUtil as NRObjStoreUtil
 import pyarrow
 from dateutil.parser import parse
 import dataretrieval.nwis as nwis
+import minio.error
+import logging
+import logging.config
+
+LOGGER = logging.getLogger(__name__)
 
 #Jan/Feb/Mar: output to instant1 file, Apr/May/Jun: output to instant2 file, etc.
 #Open instant file or create it if it doesn't exist
@@ -29,6 +34,7 @@ def download_WSC_data(dest_folder):
         local_filename = os.path.join(dest_folder,fname.split("/")[-1])
         file_url = os.path.join(current_datetime.strftime(constants.DATAMART_URL),fname)
         #Download file and write to local file name:
+        LOGGER.info(f"Downloading {fname} to {local_filename}") 
         with requests.get(fname, stream=True) as r:
             r.raise_for_status()
             with open(local_filename, 'wb') as f:
@@ -50,6 +56,7 @@ def download_USGS_data():
     RFC_ID = USGS_stn_list['BC RFC ID']
     sites = [str.replace('U', '00') for str in RFC_ID]
     # get instantaneous values (iv)
+    LOGGER.info(f"Downloading USGS data for sites: {sites}")
     df = nwis.get_record(sites=sites, service='iv', start=start_date_text, end=current_date_text)
     #Select discharge data only (parameter 00060), unstack stations to seperate columns, and convert cfs to cms:
     Q_df = round(df['00060'].unstack(level='site_no')/35.3147,3)
@@ -68,6 +75,7 @@ def download_provincial_data(dest_folder):
         #Use filename (removing remainder of url) for saving file locally:
         local_filename = os.path.join(dest_folder, fname.split("/")[-1])
         #Download file and write to local file name:
+        LOGGER.info(f"Downloading {fname} to {local_filename}")
         with requests.get(fname, stream=True) as r:
             r.raise_for_status()
             with open(local_filename, 'wb') as f:
@@ -121,6 +129,7 @@ def read_instantaneous_data_xlsx(src_file):
 def format_WSC_data(src_folder):
     for fname in constants.SOURCE_HYDRO_DATA:
         local_filename = os.path.join(src_folder, fname.split("/")[-1])
+        LOGGER.info(f"reading file to dataframe: {local_filename}")
 
         #Read in WSC data from file:
         df = pd.read_csv(local_filename)
@@ -237,7 +246,15 @@ def save_instantaneous_data(data, datatype, local_path, obj_path):
         filepath = os.path.join(local_path,filename)
         obj_filepath = os.path.join(obj_path,filename)
         data_chunk.to_parquet(filepath)
-        ostore.put_object(local_path=filepath, ostore_path=obj_filepath)
+        LOGGER.debug(f"update instantaneous data to ostore {obj_filepath}")
+        try:
+            ostore.put_object(local_path=filepath, ostore_path=obj_filepath)
+        except minio.error.S3Error as e:
+            LOGGER.error(f"error putting object to ostore: {e}")
+            LOGGER.info("going to delete versions of the file, and retry...")
+            delete_all_non_current_version(obj_filepath)
+            ostore.put_object(local_path=filepath, ostore_path=obj_filepath)
+
 
 def return_data_path(url):
     r = requests.head(url)
@@ -251,7 +268,64 @@ def csv_to_parquet(local_path,obj_path):
     local_parquet_path = os.path.splitext(local_path)[0] + '.parquet'
     obj_parquet_path = os.path.splitext(obj_path)[0] + '.parquet'
     df.to_parquet(local_parquet_path)
-    ostore.put_object(local_path=local_parquet_path, ostore_path=obj_parquet_path)
+    try:
+        ostore.put_object(local_path=local_parquet_path, ostore_path=obj_parquet_path)
+    except minio.error.S3Error as e:
+        LOGGER.error(f"error putting object to ostore: {e}")
+        LOGGER.info("going to delete versions of the file, and retry...")
+        delete_all_non_current_version(obj_parquet_path)
+        ostore.put_object(local_path=local_parquet_path, ostore_path=obj_parquet_path)
+
+def delete_all_non_current_version(ostore_path):
+    """
+    it looks like the versions can get layered on top of one another in a stack like structure.
+    When one version gets deleted thenext one in the stack will show up.  
+
+    This function will iterate over all the versions, deleting all but the latest version, all 
+    the way to the bottom of the stack. Can take a while if there are a lot of versions.
+
+    :param ostore_path: the path in object store who's versions you want to delete
+    :type ostore_path: str, path
+    """
+
+    keys = ["Versions", "DeleteMarkers"]
+    bucket = ostore.obj_store_bucket
+    ostore.createBotoClient()
+    s3 = ostore.boto_client
+
+    while True:
+        response = s3.list_object_versions(Bucket=bucket, Prefix=ostore_path)
+        versions_to_delete = []
+        
+        for k in keys:
+            if k in response:
+                data = response[k]
+                for item in data:
+                    # print("item: ", item)
+                    if item["Key"] == ostore_path and not item['IsLatest']:
+                        versions_to_delete.append({
+                            'Key': ostore_path,
+                            'VersionId': item['VersionId'],
+                            'LastModified': item['LastModified']
+                        })
+        
+        if not versions_to_delete:
+            break
+        version_string = '\n'.join([v['VersionId'] + ' ' + str(v['LastModified']) for v in versions_to_delete])
+        LOGGER.info(f'deleteing versions: {version_string}')
+
+        versions_to_delete_send = []
+        for ver in versions_to_delete:
+            del ver['LastModified']
+            versions_to_delete_send.append(ver)
+
+        delete_response = s3.delete_objects(
+            Bucket=bucket,
+            Delete={
+                'Objects': versions_to_delete_send,
+                'Quiet': True
+            }
+        )
 
 def write_PVDD(prov_Q_path,prov_H_path):
     #Set columns of dataframes containing station ID, data values, and datetimes:
@@ -277,22 +351,41 @@ def write_PVDD(prov_Q_path,prov_H_path):
         local_PVDD_path = os.path.join(constants.LOCAL_DATA_PATH,f'{prov_stn_list.loc[stn].values[0]}.csv')
         obj_PVDD_path = os.path.join("dischargeOBS/PVDD",f'{prov_stn_list.loc[stn].values[0]}.csv')
         output.to_csv(local_PVDD_path,index=False)
-        ostore.put_object(local_path=local_PVDD_path, ostore_path=obj_PVDD_path)
 
+        # check for versions of the file in object store
+        LOGGER.info(f"uploading {obj_PVDD_path} to object store")
+        ostore.put_object(local_path=local_PVDD_path, ostore_path=obj_PVDD_path)
+        # delete all non current versions
+        LOGGER.info(f"checking for redundant versions of {obj_PVDD_path}")
+        delete_all_non_current_version(obj_PVDD_path)
 
 if __name__ == '__main__':
-    # 
+
+    # setup logging
+    log_config_path = os.path.join(os.path.dirname(__file__), 'logging.config')
+    logging.config.fileConfig(log_config_path, disable_existing_loggers=False)
+    logger_name = os.path.splitext(os.path.basename(__file__))[0]
+    print(f"logger name: {logger_name}")
+    LOGGER = logging.getLogger(logger_name)
+
     ostore = NRObjStoreUtil.ObjectStoreUtil()
 
     Q_file = 'DischargeOBS_2023_instant2_Q.csv'
     H_file = 'DischargeOBS_2023_instant2_H.csv'
+    LOGGER.info(f"Q_file src: {Q_file}")
+    LOGGER.info(f"H_file src: {H_file}")
+
     data_folder = constants.RAW_DATA_FOLDER
     dest_folder = constants.LOCAL_DATA_PATH
+
     obj_path = 'dischargeOBS/processed_data/'
     Q_path = os.path.join(dest_folder, Q_file)
     H_path = os.path.join(dest_folder, H_file)
     Q_obj_path = os.path.join('dischargeOBS/processed_data/',Q_file)
     H_obj_path = os.path.join('dischargeOBS/processed_data/',H_file)
+    LOGGER.info(f"Q_obj_path in object store: {Q_obj_path}")
+    LOGGER.info(f"H_obj_path in object store: {H_obj_path}")
+
     prov_Q_path = os.path.join(data_folder, constants.PROV_HYDRO_SRC[0].split("/")[-1])
     prov_H_path = os.path.join(data_folder, constants.PROV_HYDRO_SRC[1].split("/")[-1])
     stn_list = pd.read_excel('STN_list.xlsx')
