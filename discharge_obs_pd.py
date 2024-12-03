@@ -34,9 +34,9 @@ def download_WSC_data(dest_folder):
         local_filename = os.path.join(dest_folder,fname.split("/")[-1])
         file_url = os.path.join(current_datetime.strftime(constants.DATAMART_URL),fname)
         #Download file and write to local file name:
-        LOGGER.info(f"Downloading {fname} to {local_filename}")
+        LOGGER.info(f"Downloading {file_url} to {local_filename}, status code {r.status_code}")
         with requests.get(file_url, stream=True) as r:
-            r.raise_for_status()
+            #r.raise_for_status()
             if r.status_code == requests.codes.ok:
                 with open(local_filename, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=8192): 
