@@ -22,10 +22,12 @@ import dataretrieval.nwis as nwis
 
 #Download WSC data from datamart:
 def download_WSC_data(dest_folder):
+    current_datetime = datetime.datetime.now()
     #Loop through datamart file paths listed in constants.py file:
     for fname in constants.SOURCE_HYDRO_DATA:
         #Use filename (removing remainder of url) for saving file locally:
         local_filename = os.path.join(dest_folder,fname.split("/")[-1])
+        file_url = os.path.join(current_datetime.strftime(constants.DATAMART_URL),fname)
         #Download file and write to local file name:
         with requests.get(fname, stream=True) as r:
             r.raise_for_status()
