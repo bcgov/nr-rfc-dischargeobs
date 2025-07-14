@@ -343,11 +343,13 @@ def write_PVDD(prov_Q_path,prov_H_path):
     for stn in prov_stn_list.index:
         stn_Q = Q_data[Q_data.iloc[:,1]==stn]
         stn_H = H_data[H_data.iloc[:,1]==stn]
-        stn_Q.index = stn_Q.iloc[:,0]
-        stn_H.index = stn_H.iloc[:,0]
+        stn_Q.index = pd.to_datetime(stn_Q.iloc[:,0].str.strip())
+        stn_H.index = pd.to_datetime(stn_H.iloc[:,0].str.strip())
         #stn_data = pd.concat([stn_Q,stn_H],axis=1)
+        #stn_Q.index = stn_Q.index.str.split(':').str[0].str.cat(stn_Q.index.str.split(':').str[1], sep=':')
         stn_data = pd.merge(stn_Q,stn_H,left_index=True,right_index=True,how='outer')
-        stn_data.loc[:,"Time_PST"] = pd.to_datetime(stn_data.index).copy().tz_localize('UTC').tz_convert('US/Pacific').tz_localize(None)
+        #stn_data.loc[:,"Time_PST"] = pd.to_datetime(stn_data.index).copy().tz_localize('UTC').tz_convert('US/Pacific').tz_localize(None)
+        stn_data.loc[:,"Time_PST"] = stn_data.index.copy().tz_localize('UTC').tz_convert('US/Pacific').tz_localize(None)
         stn_data.loc[:,"id"] = stn
         output = stn_data.loc[:,["id","Time_PST","Stage","Discharge"]]
         local_PVDD_path = os.path.join(constants.LOCAL_DATA_PATH,f'{prov_stn_list.loc[stn].values[0]}.csv')
