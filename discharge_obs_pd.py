@@ -349,7 +349,7 @@ def write_PVDD(prov_Q_path,prov_H_path):
         #stn_Q.index = stn_Q.index.str.split(':').str[0].str.cat(stn_Q.index.str.split(':').str[1], sep=':')
         stn_data = pd.merge(stn_Q,stn_H,left_index=True,right_index=True,how='outer')
         #stn_data.loc[:,"Time_PST"] = pd.to_datetime(stn_data.index).copy().tz_localize('UTC').tz_convert('US/Pacific').tz_localize(None)
-        stn_data.loc[:,"Time_PST"] = stn_data.index.copy().tz_localize('UTC').tz_convert('US/Pacific').tz_localize(None)
+        stn_data.loc[:,"Time_PST"] = (stn_data.index.copy().tz_localize('UTC') - datetime.timedelta(hours=8)).tz_localize(None)
         stn_data.loc[:,"id"] = stn
         output = stn_data.loc[:,["id","Time_PST","Stage","Discharge"]]
         local_PVDD_path = os.path.join(constants.LOCAL_DATA_PATH,f'{prov_stn_list.loc[stn].values[0]}.csv')
